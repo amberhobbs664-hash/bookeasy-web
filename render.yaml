@@ -1,0 +1,16 @@
+# Render Blueprint — one-click deploy for BookEasy
+# Render dashboard → New → Blueprint → select your repo → fill DATABASE_URL → Apply
+services:
+  - type: web
+    name: bookeasy
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SMS_PROVIDER
+        value: console
+      - key: NODE_VERSION
+        value: 20
