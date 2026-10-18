@@ -18,29 +18,35 @@ server.js           → local dev server
 One business per deployment. The first visitor runs the setup wizard
 (business type, details, hours, admin password) — data is stored in Postgres.
 
-## Deploy to Render (recommended — no phone verification needed)
+## Deploy to Koyeb (recommended — free, no credit card, zero friction)
 
 ### 1. Database — Neon (free)
 1. Sign up at https://neon.tech → create a project & database.
 2. Copy the connection string (starts with `postgresql://`).
+   (Alternative: Koyeb also offers a free managed PostgreSQL database —
+   create it in the Koyeb dashboard and use its connection string.)
 
-### 2. Push this folder to GitHub
-```bash
-cd bookeasy-web
-git init && git add . && git commit -m "BookEasy web"
-# create a repo on github.com and:
-git remote add origin <your-repo-url> && git push -u origin main
-```
+### 2. Deploy on Koyeb
+1. https://koyeb.com → Sign up with GitHub (no credit card needed for the free tier).
+2. **Create Service → GitHub** → select the `bookeasy-web` repo → branch `main`.
+3. Instance type: **Free** (eNano, 512 MB RAM — enough for this app).
+4. Environment variables:
+   ```
+   DATABASE_URL=postgresql://...   (your Neon string)
+   SMS_PROVIDER=console
+   ```
+5. Deploy. Koyeb gives you a `https://your-app.koyeb.app` URL —
+   open it and run the **setup wizard** (business type, hours, admin password).
 
-### 3. Deploy with one click (Blueprint)
-1. https://render.com → Sign up with GitHub → **New → Blueprint** → select your repo.
-2. When asked, paste your Neon `DATABASE_URL`. (`SMS_PROVIDER` stays `console` for testing.)
-3. **Apply** → Render builds and gives you a public URL like `https://bookeasy.onrender.com`.
-4. Open the URL → run the setup wizard. Done!
+> Notes: the free instance may scale to zero after ~1 hour of no traffic and
+> take a few seconds to wake on the next visit. The database (Neon) keeps all
+> data safe regardless. Any `git push` to `main` redeploys automatically.
 
-> Note: Vercel's signup asks for phone verification which is **not available for
-> Sri Lankan numbers** (known issue). Render has no such step, and the app runs
-> identically there (`npm start`).
+### Alternative: Render (free tier, but may ask for a card)
+Render's web hosting is free, but new accounts are sometimes asked for a credit
+card during signup. If that happens, use Koyeb above. If you get past signup:
+**New → Web Service** → connect the repo → plan **Free** → env vars
+`DATABASE_URL` (Neon — do NOT create the database on Render) and `SMS_PROVIDER=console`.
 
 ### Alternative: Vercel (if you prefer)
 Vercel's login requires SMS verification, which is not enabled for Sri Lanka.
@@ -48,7 +54,7 @@ If you still want Vercel, email **registration@vercel.com** from your signup ema
 and ask them to manually verify your account (their own recommended path).
 
 ### 4. SMS (real messages to customers)
-Pick a provider and set env vars in Vercel → Settings → Environment Variables:
+Pick a provider and set the env vars in your host's dashboard (Koyeb → Service → Environment):
 
 | Provider | `SMS_PROVIDER` | Extra env vars |
 |---|---|---|
@@ -92,12 +98,12 @@ npm test               # API tests (in-memory Postgres, no real DB needed)
 
 1. **Database:** https://neon.tech වෙත ගොස් නොමිලේ account එකක් හදා database එකක් හදන්න. Connection string එක copy කරගන්න.
 2. **GitHub:** මෙම `bookeasy-web` folder එක GitHub repo එකකට push කරන්න.
-3. **Render:** https://render.com → GitHub වලින් Sign up → **New → Blueprint** → repo එක තෝරන්න.
-   `DATABASE_URL` (Neon string එක) paste කර **Apply** කරන්න. Deploy වුණාම public URL එකක් ලැබෙනවා.
-   (Vercel එකේ phone verification ලංකාවට නැති නිසා Render නිර්දේශ කරන්නේ.)
+3. **Koyeb:** https://koyeb.com → GitHub වලින් Sign up (credit card ඕනෙ නැහැ) → **Create Service → GitHub** → `bookeasy-web` repo එක තෝරන්න → Instance type **Free**.
+   Environment variables වල `DATABASE_URL` (Neon string එක) සහ `SMS_PROVIDER=console` දාන්න → **Deploy**. Deploy වුණාම `*.koyeb.app` public URL එකක් ලැබෙනවා.
+   (Vercel එකේ phone verification ලංකාවට නැහැ, Render අලුත් accounts වලට card එකක් අහනවා — ඒ නිසා දැන් Koyeb නිර්දේශ කරන්නේ.)
 4. URL එක open කර setup wizard එකෙන් ව්‍යාපාරය හදන්න.
 5. **SMS:** ඇත්ත SMS යවන්න නම් SMS provider කෙනෙක් ඕනෙ (Twilio / Textware.lk / Dialog).
-   Vercel env vars වල `SMS_PROVIDER=twilio` (හෝ `webhook`) දමා අදාළ keys දාන්න.
+   Koyeb env vars වල `SMS_PROVIDER=twilio` (හෝ `webhook`) දමා අදාළ keys දාන්න.
    මුලින් test කරන්න `SMS_PROVIDER=console` තියන්න — SMS server logs වල පෙන්වයි.
 
 **Customer registration:** දුරකථන අංකය + SMS OTP කේතයෙන් login වේ.
