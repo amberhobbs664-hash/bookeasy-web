@@ -6,7 +6,7 @@
 /* ---------------- i18n ---------------- */
 const T = {
 en:{
-  bookTab:"Book", adminTab:"Manage", brandSub:"Appointment System",
+  bookTab:"Booking page", adminTab:"Admin panel", brandSub:"Appointment System",
   welcome:"Welcome to BookEasy", welcomeSub:"Salons, barbers, lawyers, doctors — one beautiful booking system for anyone who takes appointments.",
   getStarted:"Get started free", tryDemo:"Try demo", demoNote:"or explore with sample data",
   feat1t:"Set up in 2 minutes", feat1d:"Add your services, staff and working hours. Ready to take bookings instantly.",
@@ -15,6 +15,9 @@ en:{
   offlineNote:"Free forever · Works offline · Your data stays in this browser",
   resetDemo:"Reset demo", resetDemoQ:"Wipe everything and start over with a fresh store?",
   wentWrong:"Something went wrong",
+  adminBtnTip:"Open the admin panel \u2014 manage services, staff and bookings",
+  bookBtnTip:"View the customer booking page",
+  resetBtnTip:"Delete this demo store and start over",
   setupTitle:"Let's set up your business", setupTypeQ:"What type of business is it?",
   bizDetails:"Business details", bizName:"Business name", bizNamePh:"e.g. Glamour Salon",
   bizPhone:"Contact number", bizPhonePh:"07X XXX XXXX", bizAddr:"Address", bizAddrPh:"Street, City",
@@ -106,7 +109,7 @@ en:{
   bizTypes:{salon:"Salon",barber:"Barber Shop",lawyer:"Lawyer's Office",doctor:"Medical Clinic"},
 },
 si:{
-  bookTab:"වෙන් කරන්න", adminTab:"කළමනාකරණය", brandSub:"හමුවීම් පද්ධතිය",
+  bookTab:"බුකින් පිටුව", adminTab:"ඇඩ්මින් පැනලය", brandSub:"හමුවීම් පද්ධතිය",
   welcome:"BookEasy වෙත සාදරයෙන් පිළිගනිමු", welcomeSub:"රූපලාවන්‍යාගාර, බාබර් සාප්පු, නීතිඥවරු, වෛද්‍යවරු — හමුවීම් භාරගන්නා ඕනෑම අයෙකුට එකම ලස්සන වෙන් කිරීමේ පද්ධතිය.",
   getStarted:"නොමිලේ පටන් ගන්න", tryDemo:"ආදර්ශනය බලන්න", demoNote:"නැතහොත් නියැදි දත්ත සමඟ අත්හදා බලන්න",
   feat1t:"විනාඩි 2න් සූදානම්", feat1d:"ඔබේ සේවාවන්, කාර්ය මණ්ඩලය සහ වැඩ කරන වේලාවන් එක් කරන්න. වහාම වෙන් කිරීම් භාරගන්න.",
@@ -115,6 +118,9 @@ si:{
   offlineNote:"සදහටම නොමිලේ · අන්තර්ජාලය නැතිව ක්‍රියා කරයි · දත්ත රැඳෙන්නේ මෙම බ්‍රවුසරයේමයි",
   resetDemo:"ඩෙමෝ එක රීසෙට්", resetDemoQ:"සේරම මකා අලුත් ස්ටෝ එකකින් පටන් ගන්නද?",
   wentWrong:"යමක් වැරදුණා",
+  adminBtnTip:"ඇඩ්මින් පැනලය විවෘත කරන්න \u2014 සේවා, කාර්ය මණ්ඩලය සහ වෙන්කිරීම් කළමනාකරණය",
+  bookBtnTip:"පාරිභෝගික බුකින් පිටුව බලන්න",
+  resetBtnTip:"මෙම demo store එක මකා අලුතෙන් පටන් ගන්න",
   setupTitle:"ඔබේ ව්‍යාපාරය සූදානම් කරමු", setupTypeQ:"ව්‍යාපාර වර්ගය කුමක්ද?",
   bizDetails:"ව්‍යාපාර විස්තර", bizName:"ව්‍යාපාරයේ නම", bizNamePh:"උදා: ග්ලැමර් රූපලාවන්‍යාගාරය",
   bizPhone:"ඇමතුම් අංකය", bizPhonePh:"07X XXX XXXX", bizAddr:"ලිපිනය", bizAddrPh:"වීදිය, නගරය",
@@ -213,6 +219,7 @@ function applyLang(){
   document.getElementById('lang-en').classList.toggle('active',lang==='en');
   document.getElementById('lang-si').classList.toggle('active',lang==='si');
   document.querySelectorAll('[data-t]').forEach(el=>{ el.textContent=t(el.dataset.t); });
+  document.querySelectorAll('[data-tt]').forEach(el=>{ el.title=t(el.dataset.tt); });
   document.getElementById('brand-sub').textContent=t('brandSub');
   document.getElementById('foot').textContent=t('offlineNote');
 }
@@ -491,7 +498,7 @@ function demoBar(){
   let b=document.getElementById('demo-bar');
   if(!DB.demo){ if(b) b.remove(); return; }
   // Reset only makes sense on a tenant's own pages (needs a store in context)
-  const rb = (TENANT && !DB.protected) ? '<button class="demo-reset" onclick="demoReset()">🔄 '+esc(t('resetDemo'))+'</button>' : '';
+  const rb = (TENANT && !DB.protected) ? '<button class="demo-reset" title="'+esc(t('resetBtnTip'))+'" onclick="demoReset()">🔄 '+esc(t('resetDemo'))+'</button>' : '';
   if(!b){ b=document.createElement('div'); b.id='demo-bar'; document.body.appendChild(b); }
   b.innerHTML='<span class="demo-pill">DEMO</span>'+rb;
 }
