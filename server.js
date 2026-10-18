@@ -6,6 +6,8 @@ const { createApp } = require('./api/index');
 
 (async () => {
   const app = await createApp();
+  // Separate admin entry point: /admin serves the admin login/panel shell
+  app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
   // Serve the frontend (on Vercel, static files are served natively)
   app.use(express.static(path.join(__dirname, 'public')));
   const port = process.env.PORT || 3000;
