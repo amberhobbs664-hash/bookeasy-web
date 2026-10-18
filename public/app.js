@@ -13,6 +13,7 @@ en:{
   feat2t:"Beautiful booking page", feat2d:"Customers pick a service, staff member, date and time in a few taps.",
   feat3t:"Smart calendar & reminders", feat3d:"Track every appointment, send WhatsApp reminders and grow with reports.",
   offlineNote:"Free forever · Works offline · Your data stays in this browser",
+  resetDemo:"Reset demo", resetDemoQ:"Wipe everything and start over with a fresh store?",
   setupTitle:"Let's set up your business", setupTypeQ:"What type of business is it?",
   bizDetails:"Business details", bizName:"Business name", bizNamePh:"e.g. Glamour Salon",
   bizPhone:"Contact number", bizPhonePh:"07X XXX XXXX", bizAddr:"Address", bizAddrPh:"Street, City",
@@ -111,6 +112,7 @@ si:{
   feat2t:"ආකර්ෂණීය වෙන් කිරීමේ පිටුව", feat2d:"ගනුදෙනුකරුවන්ට සේවාව, කාර්ය මණ්ඩලය, දිනය සහ වේලාව තෝරාගත හැක.",
   feat3t:"බුද්ධිමත් දින දර්ශනය සහ මතක් කිරීම්", feat3d:"සෑම හමුවීමක්ම නිරීක්ෂණය කරන්න, WhatsApp මතක් කිරීම් යවන්න, වාර්තා සමඟ වර්ධනය වන්න.",
   offlineNote:"සදහටම නොමිලේ · අන්තර්ජාලය නැතිව ක්‍රියා කරයි · දත්ත රැඳෙන්නේ මෙම බ්‍රවුසරයේමයි",
+  resetDemo:"ඩෙමෝ එක රීසෙට්", resetDemoQ:"සේරම මකා අලුත් ස්ටෝ එකකින් පටන් ගන්නද?",
   setupTitle:"ඔබේ ව්‍යාපාරය සූදානම් කරමු", setupTypeQ:"ව්‍යාපාර වර්ගය කුමක්ද?",
   bizDetails:"ව්‍යාපාර විස්තර", bizName:"ව්‍යාපාරයේ නම", bizNamePh:"උදා: ග්ලැමර් රූපලාවන්‍යාගාරය",
   bizPhone:"ඇමතුම් අංකය", bizPhonePh:"07X XXX XXXX", bizAddr:"ලිපිනය", bizAddrPh:"වීදිය, නගරය",
@@ -322,11 +324,11 @@ const API={
   }
 };
 const DB={
-  data:null, isAdmin:false, exists:false,
+  data:null, isAdmin:false, exists:false, demo:false,
   async load(){
     try{
-      if(this.isAdmin&&API.token){ const r=await API.req('/api/admin/data'); this.data=r.data; this.exists=true; }
-      else{ const r=await API.req('/api/public/data'); this.exists=!!r.exists; this.data=r.exists?r:null;
+      if(this.isAdmin&&API.token){ const r=await API.req('/api/admin/data'); this.data=r.data; this.exists=true; this.demo=!!r.demo; }
+      else{ const r=await API.req('/api/public/data'); this.exists=!!r.exists; this.demo=!!r.demo; this.data=r.exists?r:null;
         if(this.data){ this.data.appointments=this.data.appointments||[]; this.data.customers=this.data.customers||[]; } }
     }catch(e){ this.data=null; }
     return this.data;
@@ -449,11 +451,34 @@ async function render(){
   if(PAGE==='public'&&view==='admin') view='book';
   if(PAGE==='admin'&&!DB.data){ location.href='/'; return; }
   const app=$('#app');
+  demoBar();
   if(!DB.data){ app.innerHTML = (setupStep>0&&view==='setup') ? setupHTML() : landingHTML(); window.scrollTo(0,0); return; }
   if(view==='admin'&&!DB.isAdmin){ app.innerHTML=adminLoginHTML(); window.scrollTo(0,0); return; }
   app.innerHTML = view==='admin' ? adminHTML() : bookHTML();
   if(view==='admin'&&adminTab==='reps'){ drawRevChart(); loadSmsLog(); }
   window.scrollTo(0,0);
+}
+/* ---------------- demo mode ---------------- */
+function demoBar(){
+  let b=document.getElementById('demo-bar');
+  if(!DB.demo){ if(b) b.remove(); return; }
+  if(!b){
+    b=document.createElement('div'); b.id='demo-bar';
+    b.innerHTML='<span class="demo-pill">DEMO</span>'
+      +'<button class="demo-reset" onclick="demoReset()">🔄 '+esc(t('resetDemo'))+'</button>';
+    document.body.appendChild(b);
+  } else {
+    b.querySelector('.demo-reset').innerHTML='🔄 '+esc(t('resetDemo'));
+  }
+}
+async function demoReset(){
+  confirmDlg(t('resetDemoQ'), async function(){
+    try{ await API.req('/api/demo/reset',{method:'POST'}); }
+    catch(e){ toast(t('wentWrong')||'Error','err'); return; }
+    localStorage.removeItem('bk_token'); localStorage.removeItem('bk_ctoken');
+    API.token=null; API.ctoken=null; DB.isAdmin=false;
+    location.reload();
+  }, t('resetDemo'));
 }
 function initials(n){ return n.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
 
