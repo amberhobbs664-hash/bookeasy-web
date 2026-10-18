@@ -14,6 +14,7 @@ en:{
   feat3t:"Smart calendar & reminders", feat3d:"Track every appointment, send WhatsApp reminders and grow with reports.",
   offlineNote:"Free forever · Works offline · Your data stays in this browser",
   resetDemo:"Reset demo", resetDemoQ:"Wipe everything and start over with a fresh store?",
+  wentWrong:"Something went wrong",
   setupTitle:"Let's set up your business", setupTypeQ:"What type of business is it?",
   bizDetails:"Business details", bizName:"Business name", bizNamePh:"e.g. Glamour Salon",
   bizPhone:"Contact number", bizPhonePh:"07X XXX XXXX", bizAddr:"Address", bizAddrPh:"Street, City",
@@ -113,6 +114,7 @@ si:{
   feat3t:"බුද්ධිමත් දින දර්ශනය සහ මතක් කිරීම්", feat3d:"සෑම හමුවීමක්ම නිරීක්ෂණය කරන්න, WhatsApp මතක් කිරීම් යවන්න, වාර්තා සමඟ වර්ධනය වන්න.",
   offlineNote:"සදහටම නොමිලේ · අන්තර්ජාලය නැතිව ක්‍රියා කරයි · දත්ත රැඳෙන්නේ මෙම බ්‍රවුසරයේමයි",
   resetDemo:"ඩෙමෝ එක රීසෙට්", resetDemoQ:"සේරම මකා අලුත් ස්ටෝ එකකින් පටන් ගන්නද?",
+  wentWrong:"යමක් වැරදුණා",
   setupTitle:"ඔබේ ව්‍යාපාරය සූදානම් කරමු", setupTypeQ:"ව්‍යාපාර වර්ගය කුමක්ද?",
   bizDetails:"ව්‍යාපාර විස්තර", bizName:"ව්‍යාපාරයේ නම", bizNamePh:"උදා: ග්ලැමර් රූපලාවන්‍යාගාරය",
   bizPhone:"ඇමතුම් අංකය", bizPhonePh:"07X XXX XXXX", bizAddr:"ලිපිනය", bizAddrPh:"වීදිය, නගරය",
@@ -471,14 +473,10 @@ async function render(){
 function demoBar(){
   let b=document.getElementById('demo-bar');
   if(!DB.demo){ if(b) b.remove(); return; }
-  if(!b){
-    b=document.createElement('div'); b.id='demo-bar';
-    b.innerHTML='<span class="demo-pill">DEMO</span>'
-      +'<button class="demo-reset" onclick="demoReset()">🔄 '+esc(t('resetDemo'))+'</button>';
-    document.body.appendChild(b);
-  } else {
-    b.querySelector('.demo-reset').innerHTML='🔄 '+esc(t('resetDemo'));
-  }
+  // Reset only makes sense on a tenant's own pages (needs a store in context)
+  const rb = TENANT ? '<button class="demo-reset" onclick="demoReset()">🔄 '+esc(t('resetDemo'))+'</button>' : '';
+  if(!b){ b=document.createElement('div'); b.id='demo-bar'; document.body.appendChild(b); }
+  b.innerHTML='<span class="demo-pill">DEMO</span>'+rb;
 }
 async function demoReset(){
   confirmDlg(t('resetDemoQ'), async function(){
