@@ -431,14 +431,23 @@ function custFindOrCreate(name,phone){
 function apptRevenue(a){ return (a.status==='completed'||a.status==='confirmed') ? (getService(a.serviceId)||{price:0}).price : 0; }
 
 /* ---------------- router ---------------- */
-let view='book', adminTab='dash', bookStep=1, setupStep=1, setupType='salon';
+/* PAGE is set by the HTML shell: 'public' (booking site, /) or 'admin' (/admin) */
+const PAGE = window.PAGE || 'public';
+let view = PAGE==='admin' ? 'admin' : 'book', adminTab='dash', bookStep=1, setupStep=1, setupType='salon';
 const BK={serviceId:null,staffId:null,date:null,start:null,slotStaff:null,name:'',phone:'',notes:''};
 const F={apptDate:todayStr(),apptStatus:'all',apptStaff:'all',apptSvc:'all',apptQ:'',custQ:'',calMonth:null,calDay:todayStr()};
-function go(v){ view=v; if(v==='book'){bookStep=1;resetBK();} window.scrollTo(0,0); render(); }
+function go(v){
+  if(v==='admin'&&PAGE!=='admin'){ location.href='/admin'; return; }
+  if(v==='book'&&PAGE==='admin'){ location.href='/'; return; }
+  view=v; if(v==='book'){bookStep=1;resetBK();} window.scrollTo(0,0); render();
+}
 function resetBK(){ BK.serviceId=null;BK.staffId=null;BK.date=null;BK.start=null;BK.slotStaff=null;BK.name='';BK.phone='';BK.notes=''; }
 async function render(){
-  $('#tab-book').classList.toggle('active',view==='book');
-  $('#tab-admin').classList.toggle('active',view==='admin');
+  const tb=$('#tab-book'), ta=$('#tab-admin');
+  if(tb) tb.classList.toggle('active',view==='book');
+  if(ta) ta.classList.toggle('active',view==='admin');
+  if(PAGE==='public'&&view==='admin') view='book';
+  if(PAGE==='admin'&&!DB.data){ location.href='/'; return; }
   const app=$('#app');
   if(!DB.data){ app.innerHTML = (setupStep>0&&view==='setup') ? setupHTML() : landingHTML(); window.scrollTo(0,0); return; }
   if(view==='admin'&&!DB.isAdmin){ app.innerHTML=adminLoginHTML(); window.scrollTo(0,0); return; }
@@ -831,7 +840,7 @@ async function doAdminLogin(){
 async function adminLogout(){
   try{ await API.req('/api/admin/logout',{method:'POST'}); }catch(e){}
   API.token=null; localStorage.removeItem('bk_token'); DB.isAdmin=false; DB.data=null;
-  await DB.load(); go('book');
+  await DB.load(); view='admin'; adminTab='dash'; render();
 }
 function adminHTML(){
   const tabs=[['dash','📊'],['cal','🗓️'],['appts','📋'],['custs','👥'],['servs','✂️'],['staffT','🧑‍💼'],['reps','📈'],['sett','⚙️']];
