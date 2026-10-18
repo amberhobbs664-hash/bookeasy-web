@@ -70,6 +70,20 @@ Every send is recorded in **Reports → SMS log** in the manage panel.
 > SMS gateways charge per message. `console` mode prints to the server logs —
 > perfect for testing before you buy credit.
 
+## Demo mode (let anyone try it)
+
+Deploy a **second copy** of the app with its own database and set `DEMO_MODE=true`
+(env var). The demo site shows a DEMO badge and a public "🔄 Reset demo" button —
+any visitor can run the setup wizard, create their own store, try booking + admin,
+then reset everything back to a blank slate for the next person.
+
+- `POST /api/demo/reset` wipes all data — it returns **403** unless `DEMO_MODE=true`,
+  so your production deployment is never affected.
+- Keep `SMS_PROVIDER=console` on the demo (no real SMS sent).
+
+**Roar AI:** My applications → New application → same GitHub repo → new database →
+env vars `DEMO_MODE=true`, `SMS_PROVIDER=console`.
+
 ## Customer registration
 Customers register with their **phone number + SMS OTP code** (no passwords).
 After login they can see their bookings, reschedule, cancel, and leave reviews.
@@ -107,4 +121,12 @@ npm test               # API tests (in-memory Postgres, no real DB needed)
    මුලින් test කරන්න `SMS_PROVIDER=console` තියන්න — SMS server logs වල පෙන්වයි.
 
 **Customer registration:** දුරකථන අංකය + SMS OTP කේතයෙන් login වේ.
-**Admin:** setup එකේදී දුන්නු password එකෙන් Manage panel එකට login වේ.
+**Admin:** setup එකේදී දුන්නු password එකෙන් `/admin` පිටුවෙන් login වේ.
+
+## 🇱🇰 ඩෙමෝ එකක් හදන ආකාරය
+
+ඕනෙම කෙනෙකුට setup කරලා බලන්න පුළුවන් demo site එකක් හදන්න:
+1. **Roar AI:** My applications → New application → අලුත් database එකක් සමඟ (production DB එකෙන් වෙන්ව)
+2. Env vars: `DEMO_MODE=true`, `SMS_PROVIDER=console`
+3. Demo site එකේ DEMO badge එකක් + **"🔄 Reset demo"** බොත්තමක් පෙන්වයි — කවුරුහරි setup කර, booking/admin try කර, reset කර අලුතෙන් පටන් ගන්න පුළුවන්.
+4. `DEMO_MODE=true` නැති production site එකේ reset endpoint එක 403 — Glamour Salon data එකට අත වදින්නෙ නැහැ.

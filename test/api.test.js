@@ -151,6 +151,26 @@ async function req(path, opts = {}) {
   r = await req('/api/admin/data');
   ok('admin-noauth-401', r.status === 401);
 
+  // demo mode: reset blocked when DEMO_MODE is not true
+  delete process.env.DEMO_MODE;
+  r = await req('/api/demo/reset', { method: 'POST' });
+  ok('demo-reset-blocked-403', r.status === 403);
+  r = await req('/api/public/data');
+  ok('demo-flag-false', r.j.demo === false);
+
+  // demo mode: reset works when DEMO_MODE=true and wipes everything
+  process.env.DEMO_MODE = 'true';
+  r = await req('/api/public/data');
+  ok('demo-flag-true', r.j.demo === true && r.j.exists);
+  r = await req('/api/demo/reset', { method: 'POST' });
+  ok('demo-reset-ok', r.status === 200 && r.j.ok);
+  r = await req('/api/public/data');
+  ok('demo-reset-wiped', r.j.exists === false);
+  // setup works again after reset
+  r = await req('/api/setup', { method: 'POST', body: { data: blob, adminPassword: 'secret123' } });
+  ok('demo-setup-after-reset', r.status === 200 && r.j.token);
+  delete process.env.DEMO_MODE;
+
   console.log(results.join('\n'));
   console.log('ALL API TESTS PASSED');
   srv.close();

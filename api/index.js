@@ -12,6 +12,7 @@ function asyncH(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 }
 function err(status, message) { const e = new Error(message); e.status = status; return e; }
+function isDemo() { return process.env.DEMO_MODE === 'true'; }
 
 // Public-safe subset of the business data (no customer phones, no full appointment list)
 function publicData(data) {
@@ -110,7 +111,7 @@ async function createApp() {
   app.get('/api/admin/data', adminAuth, asyncH(async (req, res) => {
     const data = await db.getData();
     if (!data) throw err(404, 'no-business');
-    res.json({ data });
+    res.json({ data, demo: isDemo() });
   }));
   app.put('/api/admin/data', adminAuth, asyncH(async (req, res) => {
     const { data } = req.body || {};
@@ -191,8 +192,15 @@ async function createApp() {
   /* ---------- public ---------- */
   app.get('/api/public/data', asyncH(async (req, res) => {
     const data = await db.getData();
-    if (!data) return res.json({ exists: false });
-    res.json(publicData(data));
+    if (!data) return res.json({ exists: false, demo: isDemo() });
+    const pub = publicData(data); pub.demo = isDemo();
+    res.json(pub);
+  }));
+  /* ---------- demo mode: public reset (only when DEMO_MODE=true) ---------- */
+  app.post('/api/demo/reset', asyncH(async (req, res) => {
+    if (!isDemo()) throw err(403, 'demo-disabled');
+    await db.clearAll();
+    res.json({ ok: true });
   }));
   app.get('/api/public/slots', asyncH(async (req, res) => {
     const data = await db.getData();

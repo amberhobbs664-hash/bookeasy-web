@@ -225,3 +225,9 @@ tr:hover td{background:#fbf9f5}
   .navtabs button{padding:8px 12px;font-size:13px}
   .wrap{padding:18px 12px 80px}
 }
+
+/* ---------- demo mode ---------- */
+#demo-bar{position:fixed;right:16px;bottom:16px;z-index:200;display:flex;align-items:center;gap:8px;background:#211d2e;color:#fff;border-radius:999px;padding:8px 8px 8px 14px;box-shadow:0 8px 28px rgba(0,0,0,.25)}
+.demo-pill{background:var(--accent);color:#211d2e;font-weight:800;font-size:11px;padding:3px 10px;border-radius:999px;letter-spacing:.08em}
+.demo-reset{border:0;background:var(--primary);color:#fff;font-weight:700;font-size:13px;padding:8px 16px;border-radius:999px;cursor:pointer}
+.demo-reset:hover{background:var(--primary-d)}
