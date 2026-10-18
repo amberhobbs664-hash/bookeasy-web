@@ -309,15 +309,23 @@ doctor:{icon:'🩺',
 
 /* ---------------- data layer ---------------- */
 /* API client (web version: Postgres backend) */
+/* Multi-tenant: slug parsed from /s/:slug URL; API calls prefixed. Tokens namespaced per tenant. */
+const TENANT = (location.pathname.match(/^\/s\/([^\/]+)/)||[])[1] || null;
+const API_P = TENANT ? '/s/'+TENANT : '';
+const TNS = TENANT ? 't_'+TENANT+'_' : '';
+function lsGet(k){ try{ return localStorage.getItem(TNS+k); }catch(e){ return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(TNS+k, String(v)); }catch(e){} }
+function lsDel(k){ try{ localStorage.removeItem(TNS+k); }catch(e){} }
 const API={
-  token:localStorage.getItem('bk_token')||null,
-  ctoken:localStorage.getItem('bk_ctoken')||null,
+  token:lsGet('bk_token')||null,
+  ctoken:lsGet('bk_ctoken')||null,
   async req(path,opts){
     opts=opts||{};
+    const url = (!TENANT || path==='/api/tenants') ? path : API_P+path;
     const headers=Object.assign({'Content-Type':'application/json'},opts.headers||{});
     if(path.indexOf('/api/admin')===0&&this.token) headers['Authorization']='Bearer '+this.token;
     if(path.indexOf('/api/me')===0&&this.ctoken) headers['Authorization']='Bearer '+this.ctoken;
-    const r=await fetch(path,{method:opts.method||'GET',headers:headers,body:opts.body});
+    const r=await fetch(url,{method:opts.method||'GET',headers:headers,body:opts.body});
     const j=await r.json().catch(function(){return {};});
     if(!r.ok) throw new Error(j.error||('http-'+r.status));
     return j;
@@ -439,8 +447,9 @@ let view = PAGE==='admin' ? 'admin' : 'book', adminTab='dash', bookStep=1, setup
 const BK={serviceId:null,staffId:null,date:null,start:null,slotStaff:null,name:'',phone:'',notes:''};
 const F={apptDate:todayStr(),apptStatus:'all',apptStaff:'all',apptSvc:'all',apptQ:'',custQ:'',calMonth:null,calDay:todayStr()};
 function go(v){
-  if(v==='admin'&&PAGE!=='admin'){ location.href='/admin'; return; }
-  if(v==='book'&&PAGE==='admin'){ location.href='/'; return; }
+  const base = TENANT ? '/s/'+TENANT : '';
+  if(v==='admin'&&PAGE!=='admin'){ location.href=base+'/admin'; return; }
+  if(v==='book'&&PAGE==='admin'){ location.href=base||'/'; return; }
   view=v; if(v==='book'){bookStep=1;resetBK();} window.scrollTo(0,0); render();
 }
 function resetBK(){ BK.serviceId=null;BK.staffId=null;BK.date=null;BK.start=null;BK.slotStaff=null;BK.name='';BK.phone='';BK.notes=''; }
@@ -475,9 +484,9 @@ async function demoReset(){
   confirmDlg(t('resetDemoQ'), async function(){
     try{ await API.req('/api/demo/reset',{method:'POST'}); }
     catch(e){ toast(t('wentWrong')||'Error','err'); return; }
-    localStorage.removeItem('bk_token'); localStorage.removeItem('bk_ctoken');
+    lsDel('bk_token'); lsDel('bk_ctoken'); lsDel('bk_cphone');
     API.token=null; API.ctoken=null; DB.isAdmin=false;
-    location.reload();
+    location.href='/';
   }, t('resetDemo'));
 }
 function initials(n){ return n.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
@@ -534,13 +543,11 @@ async function finishSetup(){
     const b=DB.data.business;
     if(window._su){ b.name=window._su.name; b.phone=window._su.phone; b.address=window._su.addr; b.about={en:window._su.about,si:window._su.about}; }
     if($('#su-h0o')) b.hours=readHoursEditor('su');
-    const r=await API.req('/api/setup',{method:'POST',body:JSON.stringify({data:DB.data,adminPassword:window._su.pass})});
-    API.token=r.token; localStorage.setItem('bk_token',r.token);
-    DB.isAdmin=true; await DB.load();
-    setupStep=4; view='book'; render();
-  }catch(e){ toast(e.message==='already-setup'?(lang==='si'?'දැනටමත් සැකසී ඇත':'Already set up'):e.message,'err'); }
-}
-/* hours editor (shared by setup & settings) */
+    const r=await API.req('/api/tenants',{method:'POST',body:JSON.stringify({data:DB.data,adminPassword:window._su.pass})});
+    try{ localStorage.setItem('t_'+r.slug+'_bk_token', r.token); }catch(e){}
+    location.href='/s/'+r.slug+'/admin';
+  }catch(e){ toast(e.message,'err'); }
+}/* hours editor (shared by setup & settings) */
 function defHours(){ const h={}; for(let d=0;d<7;d++) h[d]=d===0?{closed:true}:{open:540,close:1140}; return h; }
 function hoursEditorHTML(pfx,hours){
   hours=hours||defHours();
@@ -725,18 +732,18 @@ async function mbRequestOtp(){
 async function mbVerifyOtp(){
   try{
     const r=await API.req('/api/otp/verify',{method:'POST',body:JSON.stringify({phone:window._mbPhone,code:$('#mb-code').value})});
-    API.ctoken=r.token; localStorage.setItem('bk_ctoken',r.token); localStorage.setItem('bk_cphone',r.phone);
+    API.ctoken=r.token; lsSet('bk_ctoken',r.token); lsSet('bk_cphone',r.phone);
     myBookingsList();
   }catch(e){ toast(lang==='si'?'කේතය වැරදියි':'Wrong code','err'); }
 }
-function mbLogout(){ API.ctoken=null; localStorage.removeItem('bk_ctoken'); localStorage.removeItem('bk_cphone'); closeModal(); }
+function mbLogout(){ API.ctoken=null; lsDel('bk_ctoken'); lsDel('bk_cphone'); closeModal(); }
 async function myBookingsList(){
   openModal('<h3>🔎 '+esc(t('myBookings'))+'</h3><div id="mb-list"><div class="empty">…</div></div>'
   +'<div class="mrow"><button class="btn btn-g btn-sm" onclick="mbLogout()">'+esc(lang==='si'?'ඉවත් වන්න':'Log out')+'</button>'
   +'<button class="btn btn-g btn-sm" onclick="closeModal()">'+esc(t('close'))+'</button></div>');
   let list=[];
   try{ const r=await API.req('/api/me/bookings'); list=r.bookings; }
-  catch(e){ API.ctoken=null; localStorage.removeItem('bk_ctoken'); myBookingsDlg(); return; }
+  catch(e){ API.ctoken=null; lsDel('bk_ctoken'); myBookingsDlg(); return; }
   const now=todayStr();
   $('#mb-list').innerHTML = list.length? list.map(a=>{
     const future=a.date>=now&&!['cancelled','completed','noshow'].includes(a.status);
@@ -834,7 +841,7 @@ async function doReview(){
   const r=window._rv;
   if(r.fromMine){
     try{
-      await API.req('/api/public/review',{method:'POST',body:JSON.stringify({appointmentId:r.apptId,phone:localStorage.getItem('bk_cphone')||'',rating:r.stars,comment:$('#rv-comment').value.trim()})});
+      await API.req('/api/public/review',{method:'POST',body:JSON.stringify({appointmentId:r.apptId,phone:lsGet('bk_cphone')||'',rating:r.stars,comment:$('#rv-comment').value.trim()})});
       closeModal(); toast(t('thanksFeedback'),'ok'); myBookingsList();
     }catch(e){ toast(e.message,'err'); }
     return;
@@ -857,14 +864,14 @@ async function doAdminLogin(){
   const pw=$('#al-pass').value;
   try{
     const r=await API.req('/api/admin/login',{method:'POST',body:JSON.stringify({password:pw})});
-    API.token=r.token; localStorage.setItem('bk_token',r.token);
+    API.token=r.token; lsSet('bk_token',r.token);
     DB.isAdmin=true; await DB.load(); adminTab='dash'; render();
     toast(t('booked'),'ok');
   }catch(e){ toast(lang==='si'?'මුරපදය වැරදියි':'Wrong password','err'); }
 }
 async function adminLogout(){
   try{ await API.req('/api/admin/logout',{method:'POST'}); }catch(e){}
-  API.token=null; localStorage.removeItem('bk_token'); DB.isAdmin=false; DB.data=null;
+  API.token=null; lsDel('bk_token'); DB.isAdmin=false; DB.data=null;
   await DB.load(); view='admin'; adminTab='dash'; render();
 }
 function adminHTML(){
@@ -1252,7 +1259,7 @@ function restoreBackup(inp){
   r.onload=()=>{ try{ const d=JSON.parse(r.result); if(!d.business||!d.services||!d.staff) throw 0; DB.data=d; DB.save(); toast(t('settingsSaved'),'ok'); render(); }catch(e){ toast(t('invalidNum'),'err'); } };
   r.readAsText(f);
 }
-function resetAll(){ confirmDlg(t('eraseQ'),async function(){ try{ await API.req('/api/admin/reset',{method:'DELETE'}); }catch(e){} API.token=null; localStorage.removeItem('bk_token'); DB.isAdmin=false; DB.data=null; view='book'; setupStep=0; await DB.load(); render(); },t('yesDelete')); }
+function resetAll(){ confirmDlg(t('eraseQ'),async function(){ try{ await API.req('/api/admin/reset',{method:'DELETE'}); }catch(e){} location.href='/'; },t('yesDelete')); }
 
 /* ---------------- boot ---------------- */
 document.body.classList.toggle('si',lang==='si');
@@ -1260,6 +1267,6 @@ applyLang();
 (async function boot(){
   if(API.token) DB.isAdmin=true;
   await DB.load();
-  if(DB.isAdmin&&!DB.data){ DB.isAdmin=false; API.token=null; localStorage.removeItem('bk_token'); await DB.load(); }
+  if(DB.isAdmin&&!DB.data){ DB.isAdmin=false; API.token=null; lsDel('bk_token'); await DB.load(); }
   render();
 })();
