@@ -70,15 +70,32 @@ Every send is recorded in **Reports → SMS log** in the manage panel.
 > SMS gateways charge per message. `console` mode prints to the server logs —
 > perfect for testing before you buy credit.
 
+## Multi-tenant (many stores, one deployment)
+
+Each store is a **tenant** with its own URL: `/s/glamour-salon`, `/s/barber-kings`, …
+Data (bookings, customers, staff, SMS log, logins) is fully isolated per tenant.
+
+- `POST /api/tenants` creates a store (slug auto-generated from the business name,
+  or pass your own). Allowed on first run, or anytime when `DEMO_MODE=true`.
+  On a live production deployment with a store already set up, tenant creation is
+  **blocked** (403) — your store stays single-tenant.
+- `/` serves the store directly when exactly one exists (backward compatible);
+  with several stores (demo) it shows the landing page to create a new one.
+- `/s/:slug/admin` is each store's private manage panel.
+
+Upgrading keeps existing data: on first boot after deploy, the database is
+migrated automatically — the current store becomes a tenant (slug from its name).
+
 ## Demo mode (let anyone try it)
 
 Deploy a **second copy** of the app with its own database and set `DEMO_MODE=true`
 (env var). The demo site shows a DEMO badge and a public "🔄 Reset demo" button —
-any visitor can run the setup wizard, create their own store, try booking + admin,
-then reset everything back to a blank slate for the next person.
+any visitor can run the setup wizard, create **their own store** at `/s/their-store`,
+try booking + admin, then reset just their store back to a blank slate.
+Ten visitors = ten separate stores, no interference.
 
-- `POST /api/demo/reset` wipes all data — it returns **403** unless `DEMO_MODE=true`,
-  so your production deployment is never affected.
+- `POST /s/:slug/api/demo/reset` deletes that demo store — it returns **403**
+  unless `DEMO_MODE=true`, so your production deployment is never affected.
 - Keep `SMS_PROVIDER=console` on the demo (no real SMS sent).
 
 **Roar AI:** My applications → New application → same GitHub repo → new database →
@@ -128,5 +145,5 @@ npm test               # API tests (in-memory Postgres, no real DB needed)
 ඕනෙම කෙනෙකුට setup කරලා බලන්න පුළුවන් demo site එකක් හදන්න:
 1. **Roar AI:** My applications → New application → අලුත් database එකක් සමඟ (production DB එකෙන් වෙන්ව)
 2. Env vars: `DEMO_MODE=true`, `SMS_PROVIDER=console`
-3. Demo site එකේ DEMO badge එකක් + **"🔄 Reset demo"** බොත්තමක් පෙන්වයි — කවුරුහරි setup කර, booking/admin try කර, reset කර අලුතෙන් පටන් ගන්න පුළුවන්.
-4. `DEMO_MODE=true` නැති production site එකේ reset endpoint එක 403 — Glamour Salon data එකට අත වදින්නෙ නැහැ.
+3. Demo site එකේ DEMO badge එකක් + **"🔄 Reset demo"** බොත්තමක් පෙන්වයි — කවුරුහරි setup කර **තමන්ගෙම store එකක්** (`/s/තමන්ගෙ-නම` වගේ URL එකකින්), booking/admin try කර, reset කර අලුතෙන් පටන් ගන්න පුළුවන්. 10 දෙනෙක් ආවත් 10 දෙනාටම වෙන් වෙන් stores — කාගෙවත් දේවල් මැකෙන්නෙ නැහැ.
+4. `DEMO_MODE=true` නැති production site එකේ reset/tenant-creation endpoints 403 — Glamour Salon data එකට අත වදින්නෙ නැහැ.

@@ -1,4 +1,4 @@
-// BookEasy API — Express app factory.
+// BookEasy API — Express app factory (multi-tenant).
 // Used by server.js (local), Vercel serverless (exported handler), and tests.
 const express = require('express');
 const db = require('../lib/db');
@@ -7,6 +7,7 @@ const sms = require('../lib/sms');
 const S = require('../lib/slots');
 
 const STATUSES = ['pending', 'confirmed', 'completed', 'cancelled', 'noshow'];
+const MAX_TENANTS = 200;
 
 function asyncH(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -34,7 +35,7 @@ function fmtDate(ds) { const d = S.parseDS(ds); return d.getDate() + '/' + (d.ge
 function fmtTime(min) { let h = Math.floor(min / 60); const m = min % 60, ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; return h + ':' + String(m).padStart(2, '0') + ' ' + ap; }
 function svcName(data, id) { const s = data.services.find(x => x.id === id); return s ? (s.name.en || s.name) : ''; }
 
-async function notifyCustomer(data, booking, kind, lang) {
+async function notifyCustomer(tid, data, booking, kind, lang) {
   const c = data.customers.find(x => x.id === booking.customerId);
   if (!c) return;
   const a = {
@@ -42,7 +43,7 @@ async function notifyCustomer(data, booking, kind, lang) {
     service: svcName(data, booking.serviceId), ref: booking.ref,
   };
   const tpl = sms.MSG[kind] || sms.MSG.booked;
-  try { await sms.sendSMS(c.phone, tpl(a, lang || 'en')); }
+  try { await sms.sendSMS(c.phone, tpl(a, lang || 'en'), tid); }
   catch (e) { console.error('SMS failed:', e.message); }
 }
 
@@ -66,6 +67,23 @@ function validateBookingInput(data, { serviceId, staffId, date, start }) {
   return { svc, stId };
 }
 
+// Resolve the tenant for this request: from /s/:slug, or the single tenant
+// when exactly one exists on a non-demo deployment (backward compatible).
+// Null tenant = no store at this path (landing / setup shows).
+async function resolveTenant(req, res, next) {
+  let slug = req.params.slug || null;
+  if (!slug) {
+    const n = await db.countTenants();
+    if (n === 1 && !isDemo()) slug = (await db.listTenants())[0].id;
+    else { req.tenant = null; return next(); }
+  } else if (!await db.tenantExists(slug)) {
+    throw err(404, 'unknown-tenant');
+  }
+  req.tenant = slug ? { id: slug } : null;
+  next();
+}
+const tidOf = (req) => (req.tenant ? req.tenant.id : null);
+
 async function createApp() {
   await db.init();
   const app = express();
@@ -73,60 +91,80 @@ async function createApp() {
 
   app.get('/api/health', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 
-  /* ---------- setup (first run only) ---------- */
-  app.post('/api/setup', asyncH(async (req, res) => {
-    if (await db.getData()) throw err(409, 'already-setup');
-    const { data, adminPassword } = req.body || {};
+  /* ---------- tenant creation ---------- */
+  // Allowed on first run (zero tenants) or whenever DEMO_MODE=true.
+  app.post('/api/tenants', asyncH(async (req, res) => {
+    const n = await db.countTenants();
+    if (n > 0 && !isDemo()) throw err(403, 'tenants-disabled');
+    if (n >= MAX_TENANTS) throw err(429, 'too-many-tenants');
+    const { data, adminPassword, slug } = req.body || {};
     if (!data || !data.business || !Array.isArray(data.services) || !Array.isArray(data.staff)) throw err(400, 'bad-data');
-    await auth.setAdminPassword(adminPassword);
+    const nameStr = data.business.name && data.business.name.en ? data.business.name.en : data.business.name;
+    let finalSlug = /^[a-z0-9-]{3,40}$/.test(slug || '') ? String(slug) : db.slugify(nameStr);
+    finalSlug = await db.uniqueSlug(db.getPool(), finalSlug);
+    await db.createTenant(finalSlug);
+    await auth.setAdminPassword(adminPassword, finalSlug);
     data.appointments = data.appointments || [];
     data.customers = data.customers || [];
     data.reviews = data.reviews || [];
     data.seq = data.seq || 100;
-    await db.setData(data);
-    const token = await auth.createSession('admin', null, 7 * 24 * 3600);
-    res.json({ ok: true, token });
+    await db.setData(finalSlug, data);
+    const token = await auth.createSession('admin', null, 7 * 24 * 3600, finalSlug);
+    res.json({ ok: true, slug: finalSlug, token });
   }));
 
-  /* ---------- admin auth ---------- */
+  /* ---------- tenant-scoped API (mounted at /api and /s/:slug/api) ---------- */
+  const api = express.Router({ mergeParams: true });
+  api.use(asyncH(resolveTenant));
+
   const adminAuth = asyncH(async (req, res, next) => {
     const tok = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
     const s = await auth.getSession(tok);
-    if (!s || s.kind !== 'admin') throw err(401, 'unauthorized');
+    if (!s || s.kind !== 'admin' || !req.tenant || s.tenant_id !== req.tenant.id) throw err(401, 'unauthorized');
     next();
   });
-  app.post('/api/admin/login', asyncH(async (req, res) => {
-    const ok = await auth.verifyAdminPassword(req.body && req.body.password);
+  const custAuth = asyncH(async (req, res, next) => {
+    const tok = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    const s = await auth.getSession(tok);
+    if (!s || s.kind !== 'customer' || !req.tenant || s.tenant_id !== req.tenant.id) throw err(401, 'unauthorized');
+    req.phone = s.ref_id;
+    next();
+  });
+
+  api.post('/admin/login', asyncH(async (req, res) => {
+    const tid = tidOf(req);
+    const ok = await auth.verifyAdminPassword(req.body && req.body.password, tid);
     if (!ok) throw err(401, 'wrong-password');
-    const token = await auth.createSession('admin', null, 7 * 24 * 3600);
+    const token = await auth.createSession('admin', null, 7 * 24 * 3600, tid);
     res.json({ token });
   }));
-  app.post('/api/admin/logout', adminAuth, asyncH(async (req, res) => {
+  api.post('/admin/logout', adminAuth, asyncH(async (req, res) => {
     const tok = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
     await auth.destroySession(tok);
     res.json({ ok: true });
   }));
 
   /* ---------- admin data ---------- */
-  app.get('/api/admin/data', adminAuth, asyncH(async (req, res) => {
-    const data = await db.getData();
+  api.get('/admin/data', adminAuth, asyncH(async (req, res) => {
+    const data = await db.getData(tidOf(req));
     if (!data) throw err(404, 'no-business');
     res.json({ data, demo: isDemo() });
   }));
-  app.put('/api/admin/data', adminAuth, asyncH(async (req, res) => {
+  api.put('/admin/data', adminAuth, asyncH(async (req, res) => {
     const { data } = req.body || {};
     if (!data || !data.business || !Array.isArray(data.services) || !Array.isArray(data.staff)) throw err(400, 'bad-data');
-    await db.setData(data);
+    await db.setData(tidOf(req), data);
     res.json({ ok: true });
   }));
-  app.delete('/api/admin/reset', adminAuth, asyncH(async (req, res) => {
-    await db.clearAll();
+  api.delete('/admin/reset', adminAuth, asyncH(async (req, res) => {
+    await db.deleteTenant(tidOf(req));
     res.json({ ok: true });
   }));
 
   /* ---------- admin appointments ---------- */
-  app.post('/api/admin/appointments', adminAuth, asyncH(async (req, res) => {
-    const data = await db.getData();
+  api.post('/admin/appointments', adminAuth, asyncH(async (req, res) => {
+    const tid = tidOf(req);
+    const data = await db.getData(tid);
     if (!data) throw err(404, 'no-business');
     const { serviceId, staffId, date, start, name, phone, notes } = req.body || {};
     if (!name || !S.validPhone(phone)) throw err(400, 'bad-customer');
@@ -138,13 +176,14 @@ async function createApp() {
       status: 'confirmed', notes: String(notes || ''), createdAt: S.todayStr(),
     };
     data.appointments.push(booking);
-    await db.setData(data);
-    notifyCustomer(data, booking, 'booked', 'en');
+    await db.setData(tid, data);
+    notifyCustomer(tid, data, booking, 'booked', 'en');
     res.json({ booking });
   }));
 
-  app.patch('/api/admin/appointments/:id', adminAuth, asyncH(async (req, res) => {
-    const data = await db.getData();
+  api.patch('/admin/appointments/:id', adminAuth, asyncH(async (req, res) => {
+    const tid = tidOf(req);
+    const data = await db.getData(tid);
     if (!data) throw err(404, 'no-business');
     const a = data.appointments.find(x => x.id === req.params.id);
     if (!a) throw err(404, 'not-found');
@@ -165,51 +204,57 @@ async function createApp() {
       a.end = start + (svc ? svc.duration : 30) + (data.business.bufferMin || 0);
       smsKind = 'rescheduled';
     }
-    await db.setData(data);
-    if (smsKind) notifyCustomer(data, a, smsKind, 'en');
+    await db.setData(tid, data);
+    if (smsKind) notifyCustomer(tid, data, a, smsKind, 'en');
     res.json({ booking: a });
   }));
 
-  app.delete('/api/admin/appointments/:id', adminAuth, asyncH(async (req, res) => {
-    const data = await db.getData();
+  api.delete('/admin/appointments/:id', adminAuth, asyncH(async (req, res) => {
+    const tid = tidOf(req);
+    const data = await db.getData(tid);
     if (!data) throw err(404, 'no-business');
     data.appointments = data.appointments.filter(x => x.id !== req.params.id);
-    await db.setData(data);
+    await db.setData(tid, data);
     res.json({ ok: true });
   }));
 
-  app.post('/api/admin/sms', adminAuth, asyncH(async (req, res) => {
+  api.post('/admin/sms', adminAuth, asyncH(async (req, res) => {
     const { phone, message } = req.body || {};
     if (!S.validPhone(phone) || !message) throw err(400, 'bad-sms');
-    await sms.sendSMS(auth.normPhone(phone), String(message).slice(0, 1000));
+    await sms.sendSMS(auth.normPhone(phone), String(message).slice(0, 1000), tidOf(req));
     res.json({ ok: true });
   }));
-  app.get('/api/admin/sms-log', adminAuth, asyncH(async (req, res) => {
-    const r = await db.getPool().query('SELECT phone, message, provider, status, created_at FROM sms_log ORDER BY id DESC LIMIT 100');
+  api.get('/admin/sms-log', adminAuth, asyncH(async (req, res) => {
+    const r = await db.getPool().query(
+      'SELECT phone, message, provider, status, created_at FROM sms_log WHERE tenant_id=$1 ORDER BY id DESC LIMIT 100',
+      [tidOf(req)]
+    );
     res.json({ log: r.rows });
   }));
 
   /* ---------- public ---------- */
-  app.get('/api/public/data', asyncH(async (req, res) => {
-    const data = await db.getData();
+  api.get('/public/data', asyncH(async (req, res) => {
+    const data = await db.getData(tidOf(req));
     if (!data) return res.json({ exists: false, demo: isDemo() });
     const pub = publicData(data); pub.demo = isDemo();
     res.json(pub);
   }));
-  /* ---------- demo mode: public reset (only when DEMO_MODE=true) ---------- */
-  app.post('/api/demo/reset', asyncH(async (req, res) => {
+  /* demo mode: public reset of THIS tenant (only when DEMO_MODE=true) */
+  api.post('/demo/reset', asyncH(async (req, res) => {
     if (!isDemo()) throw err(403, 'demo-disabled');
-    await db.clearAll();
+    if (!req.tenant) throw err(404, 'no-business');
+    await db.deleteTenant(req.tenant.id);
     res.json({ ok: true });
   }));
-  app.get('/api/public/slots', asyncH(async (req, res) => {
-    const data = await db.getData();
+  api.get('/public/slots', asyncH(async (req, res) => {
+    const data = await db.getData(tidOf(req));
     if (!data) throw err(404, 'no-business');
     const { serviceId, staffId, date } = req.query;
     res.json({ slots: S.getSlots(data, date, serviceId, staffId || 'any') });
   }));
-  app.post('/api/public/book', asyncH(async (req, res) => {
-    const data = await db.getData();
+  api.post('/public/book', asyncH(async (req, res) => {
+    const tid = tidOf(req);
+    const data = await db.getData(tid);
     if (!data) throw err(404, 'no-business');
     const { serviceId, staffId, date, start, name, phone, notes, lang } = req.body || {};
     if (!name || !S.validPhone(phone)) throw err(400, 'bad-customer');
@@ -221,12 +266,13 @@ async function createApp() {
       status: 'pending', notes: String(notes || ''), createdAt: S.todayStr(),
     };
     data.appointments.push(booking);
-    await db.setData(data);
-    notifyCustomer(data, booking, 'booked', lang === 'si' ? 'si' : 'en');
+    await db.setData(tid, data);
+    notifyCustomer(tid, data, booking, 'booked', lang === 'si' ? 'si' : 'en');
     res.json({ booking, customer: { name: cust.name, phone: cust.phone } });
   }));
-  app.post('/api/public/review', asyncH(async (req, res) => {
-    const data = await db.getData();
+  api.post('/public/review', asyncH(async (req, res) => {
+    const tid = tidOf(req);
+    const data = await db.getData(tid);
     if (!data) throw err(404, 'no-business');
     const { appointmentId, phone, rating, comment } = req.body || {};
     const a = data.appointments.find(x => x.id === appointmentId);
@@ -236,35 +282,30 @@ async function createApp() {
     if (data.reviews.some(r => r.appointmentId === appointmentId)) throw err(409, 'already-reviewed');
     const r = Math.max(1, Math.min(5, parseInt(rating, 10) || 5));
     data.reviews.push({ id: S.uid('rev'), appointmentId, rating: r, comment: { en: String(comment || ''), si: String(comment || '') }, createdAt: S.todayStr() });
-    await db.setData(data);
+    await db.setData(tid, data);
     res.json({ ok: true });
   }));
 
   /* ---------- customer OTP auth ---------- */
-  app.post('/api/otp/request', asyncH(async (req, res) => {
+  api.post('/otp/request', asyncH(async (req, res) => {
+    const tid = tidOf(req);
     const { phone, lang } = req.body || {};
     try {
-      const code = await auth.requestOTP(phone);
-      try { await sms.sendSMS(auth.normPhone(phone), sms.MSG.otp(code, lang === 'si' ? 'si' : 'en')); }
+      const code = await auth.requestOTP(phone, tid);
+      try { await sms.sendSMS(auth.normPhone(phone), sms.MSG.otp(code, lang === 'si' ? 'si' : 'en'), tid); }
       catch (e) { console.error('OTP SMS failed:', e.message); }
       res.json({ ok: true, dev: (process.env.SMS_PROVIDER || 'console') === 'console' });
     } catch (e) { throw err(e.status || 500, e.message || 'otp-failed'); }
   }));
-  app.post('/api/otp/verify', asyncH(async (req, res) => {
+  api.post('/otp/verify', asyncH(async (req, res) => {
+    const tid = tidOf(req);
     const { phone, code } = req.body || {};
     try {
-      const token = await auth.verifyOTP(phone, code);
+      const token = await auth.verifyOTP(phone, code, tid);
       res.json({ token, phone: auth.normPhone(phone) });
     } catch (e) { throw err(e.status || 500, e.message || 'verify-failed'); }
   }));
 
-  const custAuth = asyncH(async (req, res, next) => {
-    const tok = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-    const s = await auth.getSession(tok);
-    if (!s || s.kind !== 'customer') throw err(401, 'unauthorized');
-    req.phone = s.ref_id;
-    next();
-  });
   function myBookings(data, phone) {
     return data.appointments
       .filter(a => { const c = data.customers.find(x => x.id === a.customerId); return c && auth.normPhone(c.phone) === phone; })
@@ -275,13 +316,14 @@ async function createApp() {
       })
       .sort((a, b) => (b.date + String(b.start).padStart(4, '0')).localeCompare(a.date + String(a.start).padStart(4, '0')));
   }
-  app.get('/api/me/bookings', custAuth, asyncH(async (req, res) => {
-    const data = await db.getData();
+  api.get('/me/bookings', custAuth, asyncH(async (req, res) => {
+    const data = await db.getData(tidOf(req));
     if (!data) throw err(404, 'no-business');
     res.json({ bookings: myBookings(data, req.phone) });
   }));
-  app.post('/api/me/bookings/:id/cancel', custAuth, asyncH(async (req, res) => {
-    const data = await db.getData();
+  api.post('/me/bookings/:id/cancel', custAuth, asyncH(async (req, res) => {
+    const tid = tidOf(req);
+    const data = await db.getData(tid);
     if (!data) throw err(404, 'no-business');
     const a = data.appointments.find(x => x.id === req.params.id);
     if (!a) throw err(404, 'not-found');
@@ -289,12 +331,13 @@ async function createApp() {
     if (!c || auth.normPhone(c.phone) !== req.phone) throw err(403, 'not-yours');
     if (!['pending', 'confirmed'].includes(a.status) || a.date < S.todayStr()) throw err(400, 'cannot-cancel');
     a.status = 'cancelled';
-    await db.setData(data);
-    notifyCustomer(data, a, 'cancelled', 'en');
+    await db.setData(tid, data);
+    notifyCustomer(tid, data, a, 'cancelled', 'en');
     res.json({ ok: true });
   }));
-  app.post('/api/me/bookings/:id/reschedule', custAuth, asyncH(async (req, res) => {
-    const data = await db.getData();
+  api.post('/me/bookings/:id/reschedule', custAuth, asyncH(async (req, res) => {
+    const tid = tidOf(req);
+    const data = await db.getData(tid);
     if (!data) throw err(404, 'no-business');
     const a = data.appointments.find(x => x.id === req.params.id);
     if (!a) throw err(404, 'not-found');
@@ -308,10 +351,13 @@ async function createApp() {
     a.date = date; a.start = start;
     a.end = start + (svc ? svc.duration : 30) + (data.business.bufferMin || 0);
     a.status = 'pending';
-    await db.setData(data);
-    notifyCustomer(data, a, 'rescheduled', 'en');
+    await db.setData(tid, data);
+    notifyCustomer(tid, data, a, 'rescheduled', 'en');
     res.json({ ok: true, booking: a });
   }));
+
+  app.use('/s/:slug/api', api);
+  app.use('/api', api);
 
   /* ---------- errors ---------- */
   // eslint-disable-next-line no-unused-vars
