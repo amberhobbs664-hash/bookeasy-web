@@ -14,6 +14,7 @@ function asyncH(fn) {
 }
 function err(status, message) { const e = new Error(message); e.status = status; return e; }
 function isDemo() { return process.env.DEMO_MODE === 'true'; }
+function protectedTenants() { return (process.env.PROTECTED_TENANTS || '').split(',').map(s => s.trim()).filter(Boolean); }
 
 // Public-safe subset of the business data (no customer phones, no full appointment list)
 function publicData(data) {
@@ -146,9 +147,10 @@ async function createApp() {
 
   /* ---------- admin data ---------- */
   api.get('/admin/data', adminAuth, asyncH(async (req, res) => {
-    const data = await db.getData(tidOf(req));
+    const tid = tidOf(req);
+    const data = await db.getData(tid);
     if (!data) throw err(404, 'no-business');
-    res.json({ data, demo: isDemo() });
+    res.json({ data, demo: isDemo(), protected: protectedTenants().includes(tid) });
   }));
   api.put('/admin/data', adminAuth, asyncH(async (req, res) => {
     const { data } = req.body || {};
@@ -234,15 +236,18 @@ async function createApp() {
 
   /* ---------- public ---------- */
   api.get('/public/data', asyncH(async (req, res) => {
-    const data = await db.getData(tidOf(req));
+    const tid = tidOf(req);
+    const data = await db.getData(tid);
     if (!data) return res.json({ exists: false, demo: isDemo() });
     const pub = publicData(data); pub.demo = isDemo();
+    pub.protected = !!(tid && protectedTenants().includes(tid));
     res.json(pub);
   }));
   /* demo mode: public reset of THIS tenant (only when DEMO_MODE=true) */
   api.post('/demo/reset', asyncH(async (req, res) => {
     if (!isDemo()) throw err(403, 'demo-disabled');
     if (!req.tenant) throw err(404, 'no-business');
+    if (protectedTenants().includes(req.tenant.id)) throw err(403, 'protected-tenant');
     await db.deleteTenant(req.tenant.id);
     res.json({ ok: true });
   }));
