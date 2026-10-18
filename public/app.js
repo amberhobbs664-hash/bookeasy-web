@@ -462,12 +462,29 @@ async function render(){
   if(PAGE==='public'&&view==='admin') view='book';
   if(PAGE==='admin'&&!DB.data){ location.href='/'; return; }
   const app=$('#app');
-  demoBar();
+  demoBar(); renderNav();
   if(!DB.data){ app.innerHTML = (setupStep>0&&view==='setup') ? setupHTML() : landingHTML(); window.scrollTo(0,0); return; }
   if(view==='admin'&&!DB.isAdmin){ app.innerHTML=adminLoginHTML(); window.scrollTo(0,0); return; }
   app.innerHTML = view==='admin' ? adminHTML() : bookHTML();
   if(view==='admin'&&adminTab==='reps'){ drawRevChart(); loadSmsLog(); }
   window.scrollTo(0,0);
+}
+/* ---------------- topbar nav (tenant-aware) ---------------- */
+function renderNav(){
+  const base = TENANT ? '/s/'+TENANT : '';
+  if(PAGE==='public'){
+    // Admin button visible only in demo mode (production keeps admin hidden)
+    const al=document.getElementById('admin-link');
+    if(al){
+      if(DB.demo && TENANT){ al.style.display=''; al.href=base+'/admin'; }
+      else al.style.display='none';
+    }
+  }else{
+    const bl=document.getElementById('book-link');
+    if(bl) bl.href=base||'/';
+    const bh=document.getElementById('brand-home');
+    if(bh) bh.onclick=function(){ location.href=base||'/'; };
+  }
 }
 /* ---------------- demo mode ---------------- */
 function demoBar(){
