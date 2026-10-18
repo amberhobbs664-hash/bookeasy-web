@@ -233,6 +233,14 @@ async function testMigration() {
   r = await req(TB('/api/admin/data'), AB);
   ok('tenant-b-admin-ok', r.status === 200 && r.j.data.business.name === 'Second Store');
 
+  // protected tenants cannot be reset via demo endpoint
+  process.env.PROTECTED_TENANTS = slugA;
+  r = await req(T('/api/demo/reset'), { method: 'POST' });
+  ok('demo-reset-protected-403', r.status === 403);
+  r = await req(T('/api/public/data'));
+  ok('demo-protected-flag', r.j.protected === true);
+  delete process.env.PROTECTED_TENANTS;
+
   // demo reset deletes ONLY tenant B
   r = await req(TB('/api/demo/reset'), { method: 'POST' });
   ok('demo-reset-b-ok', r.status === 200 && r.j.ok);
