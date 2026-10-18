@@ -334,11 +334,11 @@ const API={
   }
 };
 const DB={
-  data:null, isAdmin:false, exists:false, demo:false,
+  data:null, isAdmin:false, exists:false, demo:false, protected:false,
   async load(){
     try{
-      if(this.isAdmin&&API.token){ const r=await API.req('/api/admin/data'); this.data=r.data; this.exists=true; this.demo=!!r.demo; }
-      else{ const r=await API.req('/api/public/data'); this.exists=!!r.exists; this.demo=!!r.demo; this.data=r.exists?r:null;
+      if(this.isAdmin&&API.token){ const r=await API.req('/api/admin/data'); this.data=r.data; this.exists=true; this.demo=!!r.demo; this.protected=!!r.protected; }
+      else{ const r=await API.req('/api/public/data'); this.exists=!!r.exists; this.demo=!!r.demo; this.protected=!!r.protected; this.data=r.exists?r:null;
         if(this.data){ this.data.appointments=this.data.appointments||[]; this.data.customers=this.data.customers||[]; } }
     }catch(e){ this.data=null; }
     return this.data;
@@ -474,7 +474,7 @@ function demoBar(){
   let b=document.getElementById('demo-bar');
   if(!DB.demo){ if(b) b.remove(); return; }
   // Reset only makes sense on a tenant's own pages (needs a store in context)
-  const rb = TENANT ? '<button class="demo-reset" onclick="demoReset()">🔄 '+esc(t('resetDemo'))+'</button>' : '';
+  const rb = (TENANT && !DB.protected) ? '<button class="demo-reset" onclick="demoReset()">🔄 '+esc(t('resetDemo'))+'</button>' : '';
   if(!b){ b=document.createElement('div'); b.id='demo-bar'; document.body.appendChild(b); }
   b.innerHTML='<span class="demo-pill">DEMO</span>'+rb;
 }
